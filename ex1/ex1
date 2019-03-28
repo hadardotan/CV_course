@@ -1,0 +1,201 @@
+import numpy as np
+from scipy.misc import imsave, imread
+import skimage.color as skimage
+import scipy.signal as signal
+from scipy.ndimage import map_coordinates
+import os
+from matplotlib import pyplot as plt
+
+"""
+IMPR functions
+"""
+
+
+def read_image(filename, representation):
+    """
+    :param filename: string containing the image filename to read
+    :param representation: representation code, either 1 or 2 defining whether the output should be a grayscale
+    image 1 or an RGB image 2
+    :return: grayscale or RGB np.float64 image with values in range [0, 1]
+    """
+    image = imread(filename)
+    new_image = image.astype(np.float64)
+    new_image /= 255
+    if representation == 1:
+        x = skimage.rgb2gray(new_image)
+        return x
+    if representation == 2:
+        return new_image
+
+
+def relpath(filename):
+    """
+    :param filename:
+    :return:
+    """
+    return os.path.join(os.path.dirname(__file__), filename)
+
+
+def create_gaussian_kernel(kernel_size):
+    """
+    :param kernel_size:
+    :return:
+    """
+    if kernel_size == 1:
+        return np.array([[1]])
+    vec = np.array([[1, 1]]).astype(np.float64)
+    vec_to_return = vec.copy()
+    for i in range(kernel_size - 2):
+            vec_to_return = signal.convolve2d(vec_to_return, vec) #todo: 2d?
+    normal = 1 / np.sum(vec_to_return)
+    return normal * vec_to_return
+
+def apply_homography(pos1, H12):
+    """
+  Apply homography to inhomogenous points.
+  :param pos1: An array with shape (N,2) of [x,y] point coordinates.
+  :param H12: A 3x3 homography matrix.
+  :return: An array with the same shape as pos1 with [x,y] point coordinates obtained from transforming pos1 using H12.
+  """
+    ones = np.array(np.ones((pos1.shape[0], 1)))
+    pos1 = np.hstack((pos1, ones))
+    pos2 = np.dot(H12, pos1.transpose())
+    pos2 = pos2 / pos2[2]
+    return pos2[:2, :].transpose()
+
+def compute_bounding_box(homography, w, h):
+    """
+  computes bounding box of warped image under homography, without actually warping the image
+  :param homography: homography
+  :param w: width of the image
+  :param h: height of the image
+  :return: 2x2 array, where the first row is [x,y] of the top left corner,
+   and the second row is the [x,y] of the bottom right corner
+  """
+    # compute where the 4 corner pixel coordinates of each frame get mapped to by homography
+    t_l, t_r, b_l, b_r = np.array([[0, 0]]), np.array([[w, 0]]), np.array([[0, h]]), np.array([[w, h]])
+    t_l_x, t_l_y = apply_homography(t_l, homography).transpose()
+    t_r_x, t_r_y = apply_homography(t_r, homography).transpose()
+    b_l_x, b_l_y = apply_homography(b_l, homography).transpose()
+    b_r_x, b_r_y = apply_homography(b_r, homography).transpose()
+
+    all_x, all_y = [t_l_x, t_r_x, b_l_x, b_r_x],  [t_l_y, t_r_y, b_l_y, b_r_y]
+
+    min_x, min_y = min(all_x)[0], min(all_y)[0]
+    max_x, max_y = max(all_x)[0], max(all_y)[0]
+
+    return np.array([[min_x, min_y], [max_x, max_y]]).astype(int)
+
+def warp_channel(image, homography):
+    """
+  Warps a 2D image with a given homography.
+  :param image: a 2D image.
+  :param homography: homograhpy.
+  :return: A 2d warped image.
+  """
+
+    # for an input image prepare coordinate strips to hold the x and y coordinates of each of the warped image.
+    t_l, b_r = compute_bounding_box(homography, image.shape[1], image.shape[0])
+    x_range = np.arange(t_l[0], b_r[0])
+    y_range = np.arange(t_l[1], b_r[1])
+    x_coords, y_coords = np.array(np.meshgrid(x_range, y_range))
+
+    # transform the coordinate mesh by the inverse homography back to the coordinate system of frame i
+    inverse_homography = np.linalg.inv(homography)
+    origin_coords = np.array([x_coords, y_coords]).transpose()
+
+    origin_shape = origin_coords.shape
+    bw_coords = apply_homography(origin_coords.reshape(-1, 2), inverse_homography).reshape(origin_shape)
+
+    # interpolate the image
+    return map_coordinates(image, [bw_coords[:, :, 1].transpose(), bw_coords[:, :, 0].transpose()], order=1, prefilter=False)
+
+
+def warp_image(image, homography):
+    """
+  Warps an RGB image with a given homography.
+  :param image: an RGB image.
+  :param homography: homograhpy.
+  :return: A warped image.
+  """
+    return np.dstack([warp_channel(image[..., channel], homography) for channel in range(3)])
+
+
+
+"""
+part 1
+"""
+
+def draw_conics():
+    """
+
+    :return:
+    """
+def show_images():
+    plt.figure()
+    plt.imshow("1.jpg")
+    plt.imshow("2.jpg")
+    plt.imshow("3.jpg")
+    plt.show()
+
+
+show_images()
+
+"""
+part 2
+"""
+
+
+def find_homo_rect(rect):
+    """
+    apply projective transformation on rect
+
+    :param rect: (4,2) np array
+    :return:
+    """
+    return np.concatenate((rect, np.ones(4).reshape(4, 1)), axis=1)
+
+
+def find_l_inf_rect(rect):
+    """
+    calc l inf for rect (according to affine rectification slide)
+    :param rect: (4,2) np array
+    :return:
+    """
+    l1 = np.cross(rect[0], rect[1])
+    l2 = np.cross(rect[1], rect[2])
+    l3 = np.cross(rect[2], rect[3])
+    l4 = np.cross(rect[3], rect[0])
+    v1 = np.cross(l1, l3)
+    v2 = np.cross(l2, l4)
+    l_inf = np.cross(v1, v2)
+    return np.divide(l_inf, l_inf[2])  # normalize
+
+
+
+
+def rectify_affinely(rect):
+    """
+
+    :param rect: (4,2) np array
+    :return:
+    """
+    homo_rect = find_homo_rect(rect)
+    return find_l_inf_rect(homo_rect)
+
+
+
+
+def main():
+
+
+    im = read_image(relpath("rect.jpg"), 2)
+    rect = np.array([[]])
+    affine_rect = rectify_affinely(rect)
+
+
+
+
+
+
+
