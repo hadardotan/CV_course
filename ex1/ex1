@@ -132,10 +132,11 @@ def draw_conics():
     :return:
     """
 def show_images():
+    im1, im2, im3 = im = read_image(relpath("1.jpeg"), 2), read_image(relpath("2.jpeg"), 2), read_image(relpath("3.jpeg"), 2)
     plt.figure()
-    plt.imshow("1.jpg")
-    plt.imshow("2.jpg")
-    plt.imshow("3.jpg")
+    plt.imshow(im1)
+    plt.imshow(im2)
+    plt.imshow(im3)
     plt.show()
 
 
